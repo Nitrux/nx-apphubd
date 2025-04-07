@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nx-apphubd"
+version = "0.1.0"
+description = "AppBox desktop integration daemon for nx-apphub"
+authors = [{name = "Your Name"}]
+requires-python = ">=3.7"
+
+[project.scripts]
+nx-apphubd = "nx_apphubd.main:main"
