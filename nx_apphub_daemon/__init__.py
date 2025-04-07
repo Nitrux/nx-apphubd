@@ -22,26 +22,5 @@
 #    STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.   #
 #############################################################################################################################################################################
 
-from setuptools import setup, find_packages
-
-
-setup(
-    name="nx-apphubd",
-    version="0.1.0",
-    packages=find_packages(),
-    install_requires=[
-        "watchdog",
-    ],
-    entry_points={
-        'console_scripts': [
-            'nx-apphubd = nx_apphub_daemon.main:main'
-        ]
-    },
-    author="Your Name",
-    description="AppBox desktop integration daemon for nx-apphub",
-    classifiers=[
-        "Programming Language :: Python :: 3",
-        "Operating System :: POSIX :: Linux",
-    ],
-    python_requires='>=3.7',
-)
+__version__ = "0.1.0"
+__appname__ = "nx-apphubd"

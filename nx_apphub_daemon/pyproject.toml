@@ -10,4 +10,4 @@ authors = [{name = "Your Name"}]
 requires-python = ">=3.7"
 
 [project.scripts]
-nx-apphubd = "nx_apphubd.main:main"
+nx-apphubd = "nx_apphub_daemon.main:main"
