@@ -22,140 +22,136 @@
 #    STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.   #
 #############################################################################################################################################################################
 
-from pathlib import Path
+import os
 import shutil
 import subprocess
 import time
 import logging
-from logging.handlers import RotatingFileHandler
+from pathlib import Path
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
-
-appbox_dir = Path.home() / ".local/bin/nx-apphub"
-applications_dir = Path.home() / ".local/share/applications"
+watch_dir = Path.home() / ".local/bin/nx-apphub"
+extract_dir = Path.home() / ".cache/nx-apphubd"
+apps_dir = Path.home() / ".local/share/applications"
 icons_dir = Path.home() / ".local/share/icons"
 log_file = Path.home() / ".nx-apphubd.log"
 
-
-log_handler = RotatingFileHandler(
-    filename=log_file,
-    maxBytes=1_000_000,
-    backupCount=3
-)
 logging.basicConfig(
+    filename=log_file,
     level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    handlers=[log_handler]
+    format="%(asctime)s [%(levelname)s] %(message)s"
 )
+
+def extract_appbox(appbox_path: Path, quiet=True):
+    logging.info(f"Extracting {appbox_path}")
+    os.chdir(extract_dir)
+    subprocess.run(
+        [str(appbox_path), "--appimage-extract"],
+        check=True,
+        stdout=subprocess.DEVNULL if quiet else None,
+        stderr=subprocess.DEVNULL if quiet else None
+    )
+
+def find_desktop_file():
+    desktop_dir = extract_dir / "squashfs-root"
+    for root, _, files in os.walk(desktop_dir):
+        for file in files:
+            if file.endswith(".desktop"):
+                return Path(root) / file
+    return None
+
+def find_icon_file():
+    icon_dir = extract_dir / "squashfs-root"
+    for root, _, files in os.walk(icon_dir):
+        for file in files:
+            if file.lower().endswith((".png", ".svg", ".xpm")):
+                return Path(root) / file
+    return None
+
+def integrate_appbox(appbox_path: Path):
+    extract_dir.mkdir(parents=True, exist_ok=True)
+    extract_appbox(appbox_path, quiet=True)
+
+    desktop_file = find_desktop_file()
+    if not desktop_file:
+        logging.warning(f"No desktop file found in {appbox_path}")
+        shutil.rmtree(extract_dir / "squashfs-root", ignore_errors=True)
+        return
+
+    icon_file = find_icon_file()
+    icon_dest = None
+
+    if icon_file:
+        icon_dest = icons_dir / icon_file.name
+        icons_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy(icon_file, icon_dest)
+
+    new_desktop_path = apps_dir / desktop_file.name
+    apps_dir.mkdir(parents=True, exist_ok=True)
+    with open(desktop_file, "r") as f:
+        content = f.read()
+
+    lines = []
+    for line in content.splitlines():
+        if line.startswith("Exec="):
+            lines.append(f"Exec={str(appbox_path)}")
+        elif line.startswith("Icon=") and icon_file:
+            lines.append(f"Icon={icon_dest.stem}")
+        else:
+            lines.append(line)
+    content = "\n".join(lines)
+
+    with open(new_desktop_path, "w") as f:
+        f.write(content)
+
+    logging.info(f"Integrated {appbox_path.name} as {new_desktop_path.name}")
+    shutil.rmtree(extract_dir / "squashfs-root", ignore_errors=True)
+
+def remove_integration(appbox_path: Path):
+    appbox_name = appbox_path.stem
+    for file in apps_dir.glob("*.desktop"):
+        try:
+            with open(file, "r", encoding="utf-8", errors="ignore") as f:
+                if str(appbox_path) in f.read():
+                    file.unlink()
+                    logging.info(f"Removed desktop entry {file.name}")
+        except Exception as e:
+            logging.error(f"Failed to read {file}: {e}")
+
+    for file in icons_dir.iterdir():
+        if file.stem == appbox_name:
+            file.unlink()
+            logging.info(f"Removed icon {file.name}")
 
 class AppBoxHandler(FileSystemEventHandler):
     def on_created(self, event):
         if event.is_directory or not event.src_path.endswith(".AppBox"):
             return
+        time.sleep(1)
         integrate_appbox(Path(event.src_path))
 
     def on_deleted(self, event):
         if event.is_directory or not event.src_path.endswith(".AppBox"):
             return
-        remove_appbox_integration(Path(event.src_path))
-
-
-def notify_user(app_name):
-    subprocess.run([
-        "notify-send",
-        "-a", "nx-apphubd",
-        "-u", "normal",
-        "--action=Understood",
-        "-i", "dialog-information",
-        "AppBox Integrated",
-        f"{app_name} has been added to your applications menu."
-    ])
-
-
-def integrate_appbox(appbox_path):
-    output_desktop = applications_dir / f"{appbox_path.stem}.desktop"
-
-    if output_desktop.exists():
-        with open(output_desktop, "r") as f:
-            if any("X-AppBox-Integrated=true" in line for line in f):
-                return
-
-    extract_dir = Path("/tmp") / f"{appbox_path.stem}-extract"
-    if extract_dir.exists():
-        shutil.rmtree(extract_dir)
-
-    subprocess.run(
-        ["sh", "-c", f"'{str(appbox_path)}' --appimage-extract"],
-        cwd="/tmp",
-        check=True
-    )
-    extracted = Path("/tmp/squashfs-root")
-
-    desktop_files = list(extracted.rglob("*.desktop"))
-    if not desktop_files:
-        return
-    desktop_file = desktop_files[0]
-
-    with open(desktop_file, "r") as f:
-        lines = f.readlines()
-
-    updated_lines = []
-    for line in lines:
-        if line.startswith("Exec="):
-            continue
-        elif line.startswith("Icon="):
-            icon_value = line.strip().split("=", 1)[-1]
-            icon_file = next(extracted.rglob(f"{icon_value}.*"), None)
-            if icon_file:
-                icon_dest = icons_dir / icon_file.name
-                icon_dest.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy(icon_file, icon_dest)
-                updated_lines.append(f"Icon={icon_dest}\n")
-            else:
-                updated_lines.append(line)
-        else:
-            updated_lines.append(line)
-
-    firejail_options = [
-        "--env=DESKTOPINTEGRATION=appimaged",
-        "--private",
-        "--appimage",
-        f"--apparmor={appbox_path.stem}"
-    ]
-    exec_line = f"Exec=firejail {' '.join(firejail_options)} {str(appbox_path)} %u\n"
-
-    updated_lines.append(exec_line)
-    updated_lines.append("X-AppBox-Integrated=true\n")
-
-    with open(output_desktop, "w") as f:
-        f.writelines(updated_lines)
-
-    logging.info(f"Integrated AppBox: {appbox_path.name}")
-    notify_user(appbox_path.name)
-
-def remove_appbox_integration(appbox_path):
-    desktop_file = applications_dir / f"{appbox_path.stem}.desktop"
-    if desktop_file.exists():
-        desktop_file.unlink()
-
-    for icon_file in icons_dir.glob(f"{appbox_path.stem}.*"):
-        icon_file.unlink()
-
-    logging.info(f"Removed AppBox integration: {appbox_path.name}")
-
+        remove_integration(Path(event.src_path))
 
 def main():
-    applications_dir.mkdir(parents=True, exist_ok=True)
-    icons_dir.mkdir(parents=True, exist_ok=True)
+    logging.info("Starting nx-apphubd")
     observer = Observer()
-    observer.schedule(AppBoxHandler(), path=str(appbox_dir), recursive=False)
+    observer.schedule(AppBoxHandler(), path=str(watch_dir), recursive=False)
     observer.start()
+
+    for appbox in watch_dir.glob("*.AppBox"):
+        integrate_appbox(appbox)
+
     try:
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
         observer.stop()
     observer.join()
+    logging.info("Stopping nx-apphubd")
 
-main()
+if __name__ == "__main__":
+    main()
