@@ -31,7 +31,7 @@ from logging.handlers import RotatingFileHandler
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
-s
+
 appbox_dir = Path.home() / ".local/bin/nx-apphub"
 applications_dir = Path.home() / ".local/share/applications"
 icons_dir = Path.home() / ".local/share/icons"
@@ -85,7 +85,11 @@ def integrate_appbox(appbox_path):
     if extract_dir.exists():
         shutil.rmtree(extract_dir)
 
-    subprocess.run([str(appbox_path), "--appimage-extract"], cwd="/tmp", check=True)
+    subprocess.run(
+        ["sh", "-c", f"'{str(appbox_path)}' --appimage-extract"],
+        cwd="/tmp",
+        check=True
+    )
     extracted = Path("/tmp/squashfs-root")
 
     desktop_files = list(extracted.rglob("*.desktop"))

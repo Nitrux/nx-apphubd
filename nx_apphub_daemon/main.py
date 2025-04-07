@@ -85,7 +85,11 @@ def integrate_appbox(appbox_path):
     if extract_dir.exists():
         shutil.rmtree(extract_dir)
 
-    subprocess.run([str(appbox_path), "--appimage-extract"], cwd="/tmp", check=True)
+    subprocess.run(
+        ["sh", "-c", f"'{str(appbox_path)}' --appimage-extract"],
+        cwd="/tmp",
+        check=True
+    )
     extracted = Path("/tmp/squashfs-root")
 
     desktop_files = list(extracted.rglob("*.desktop"))
