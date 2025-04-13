@@ -27,6 +27,7 @@ import shutil
 import subprocess
 import time
 import logging
+import re
 from pathlib import Path
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
@@ -43,14 +44,23 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s"
 )
 
+def sanitize_name(name: str) -> str:
+    return re.sub(r'[:+~]', '-', name)
+
 def extract_appbox(appbox_path: Path, quiet=True):
     logging.info(f"Extracting {appbox_path}")
+    extract_dir.mkdir(parents=True, exist_ok=True)
     os.chdir(extract_dir)
+
+    kwargs = {}
+    if quiet:
+        kwargs["stdout"] = subprocess.DEVNULL
+        kwargs["stderr"] = subprocess.DEVNULL
+
     subprocess.run(
         [str(appbox_path), "--appimage-extract"],
         check=True,
-        stdout=subprocess.DEVNULL if quiet else None,
-        stderr=subprocess.DEVNULL if quiet else None
+        **kwargs
     )
 
 def find_desktop_file():
@@ -71,6 +81,15 @@ def find_icon_file():
 
 def integrate_appbox(appbox_path: Path):
     extract_dir.mkdir(parents=True, exist_ok=True)
+
+    if not os.access(appbox_path, os.X_OK):
+        logging.warning(f"{appbox_path.name} is not executable; setting mode 755")
+        appbox_path.chmod(0o755)
+
+    if not appbox_path.is_file():
+        logging.error(f"{appbox_path} is not a valid file")
+        return
+
     extract_appbox(appbox_path, quiet=True)
 
     desktop_file = find_desktop_file()
@@ -82,12 +101,14 @@ def integrate_appbox(appbox_path: Path):
     icon_file = find_icon_file()
     icon_dest = None
 
+    sanitized_stem = sanitize_name(appbox_path.stem)
+
     if icon_file:
-        icon_dest = icons_dir / icon_file.name
+        icon_dest = icons_dir / f"{sanitized_stem}{icon_file.suffix}"
         icons_dir.mkdir(parents=True, exist_ok=True)
         shutil.copy(icon_file, icon_dest)
 
-    new_desktop_path = apps_dir / desktop_file.name
+    new_desktop_path = apps_dir / f"{sanitized_stem}.desktop"
     apps_dir.mkdir(parents=True, exist_ok=True)
     with open(desktop_file, "r") as f:
         content = f.read()
@@ -96,8 +117,10 @@ def integrate_appbox(appbox_path: Path):
     for line in content.splitlines():
         if line.startswith("Exec="):
             lines.append(f"Exec={str(appbox_path)}")
+        elif line.startswith("TryExec="):
+            lines.append(f"TryExec={str(appbox_path)}")
         elif line.startswith("Icon=") and icon_file:
-            lines.append(f"Icon={icon_dest.stem}")
+            lines.append(f"Icon={str(icon_dest)}")
         else:
             lines.append(line)
     content = "\n".join(lines)
@@ -109,7 +132,7 @@ def integrate_appbox(appbox_path: Path):
     shutil.rmtree(extract_dir / "squashfs-root", ignore_errors=True)
 
 def remove_integration(appbox_path: Path):
-    appbox_name = appbox_path.stem
+    appbox_name = sanitize_name(appbox_path.stem)
     for file in apps_dir.glob("*.desktop"):
         try:
             with open(file, "r", encoding="utf-8", errors="ignore") as f:
@@ -125,16 +148,34 @@ def remove_integration(appbox_path: Path):
             logging.info(f"Removed icon {file.name}")
 
 class AppBoxHandler(FileSystemEventHandler):
+    @staticmethod
+    def wait_for_file_complete(path: Path, timeout=10, interval=0.2):
+        """Wait until the file size stops changing."""
+        start_time = time.time()
+        last_size = -1
+
+        while time.time() - start_time < timeout:
+            try:
+                current_size = path.stat().st_size
+                if current_size == last_size:
+                    return True
+                last_size = current_size
+            except FileNotFoundError:
+                pass
+            time.sleep(interval)
+        return False
+
     def on_created(self, event):
         if event.is_directory or not event.src_path.endswith(".AppBox"):
             return
-        time.sleep(1)
-        integrate_appbox(Path(event.src_path))
 
-    def on_deleted(self, event):
-        if event.is_directory or not event.src_path.endswith(".AppBox"):
+        appbox_path = Path(event.src_path)
+
+        if not self.wait_for_file_complete(appbox_path):
+            logging.warning(f"File not ready after timeout: {appbox_path}")
             return
-        remove_integration(Path(event.src_path))
+
+        integrate_appbox(appbox_path)
 
 def main():
     logging.info("Starting nx-apphubd")
