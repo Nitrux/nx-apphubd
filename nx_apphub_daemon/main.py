@@ -177,6 +177,11 @@ class AppBoxHandler(FileSystemEventHandler):
 
         integrate_appbox(appbox_path)
 
+    def on_deleted(self, event):
+        if event.is_directory or not event.src_path.endswith(".AppBox"):
+            return
+        remove_integration(Path(event.src_path))
+
 def main():
     logging.info("Starting nx-apphubd")
     observer = Observer()
