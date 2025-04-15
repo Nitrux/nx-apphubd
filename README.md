@@ -45,7 +45,7 @@ pipx install --system-site-packages git+https://github.com/Nitrux/nx-apphubd.git
 
 # Usage
 
-To use NX AppHub Daemon simply run it.
+To use NX AppHub Daemon, simply run it.
 
 
 # Licensing
