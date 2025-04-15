@@ -15,7 +15,7 @@ For more in-depth information about NX AppHub CLI, please see the [Wiki](https:/
 ### Requirements
 
 - Nitrux 4.0.0 and newer.
-    - _♦ Information: To use `nx-apphub-cli` in previous versions of Nitrux use a container._
+    - _♦ Information: To use `nx-apphubd` in previous versions of Nitrux use a container._
 - Python 3.10 and newer.
 
 NX AppHub Daemon requires the following utilities to function properly:
