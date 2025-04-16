@@ -36,11 +36,18 @@ To install NX AppHub Daemon we recommend using pipx.
 pipx install git+https://github.com/Nitrux/nx-apphubd.git
 ```
 
-
 ### System-wide
 
 ```
 pipx install --system-site-packages git+https://github.com/Nitrux/nx-apphubd.git
+```
+
+# Uninstallation
+
+To uninstall NX AppHub Daemon, do the following.
+
+```
+pipx uninstall nx-apphubd
 ```
 
 # Usage
