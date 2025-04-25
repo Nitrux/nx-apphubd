@@ -32,10 +32,17 @@ from pathlib import Path
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
+
+# -- Set integration directories.
+
 watch_dir = Path.home() / ".local/bin/nx-apphub"
 extract_dir = Path.home() / ".cache/nx-apphubd"
 apps_dir = Path.home() / ".local/share/applications"
 icons_dir = Path.home() / ".local/share/icons"
+
+
+# -- Use a log file.
+
 log_file = Path.home() / ".nx-apphubd.log"
 
 logging.basicConfig(
@@ -44,8 +51,25 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s"
 )
 
+
 def sanitize_name(name: str) -> str:
     return re.sub(r'[:+~]', '-', name)
+
+
+def get_base_app_name(filename_stem: str) -> str:
+    """
+    Extract the base application name from an AppBox filename.
+    """
+    filename_stem = re.sub(r'-[^-]+$', '', filename_stem)
+
+    base_name = filename_stem.split('-')[0]
+
+    parts = filename_stem.split('-')
+    if len(parts) >= 2 and not re.search(r'\d', parts[1]):
+        base_name = '-'.join(parts[:2])
+
+    return base_name
+
 
 def extract_appbox(appbox_path: Path, quiet=True):
     logging.info(f"Extracting {appbox_path}")
@@ -63,6 +87,7 @@ def extract_appbox(appbox_path: Path, quiet=True):
         **kwargs
     )
 
+
 def find_desktop_file():
     desktop_dir = extract_dir / "squashfs-root"
     for root, _, files in os.walk(desktop_dir):
@@ -71,6 +96,7 @@ def find_desktop_file():
                 return Path(root) / file
     return None
 
+
 def find_icon_file():
     icon_dir = extract_dir / "squashfs-root"
     for root, _, files in os.walk(icon_dir):
@@ -78,6 +104,7 @@ def find_icon_file():
             if file.lower().endswith((".png", ".svg", ".xpm")):
                 return Path(root) / file
     return None
+
 
 def integrate_appbox(appbox_path: Path):
     extract_dir.mkdir(parents=True, exist_ok=True)
@@ -88,6 +115,15 @@ def integrate_appbox(appbox_path: Path):
 
     if not appbox_path.is_file():
         logging.error(f"{appbox_path} is not a valid file")
+        return
+
+    sanitized_stem = get_base_app_name(appbox_path.stem)
+    desktop_file_path = apps_dir / f"{sanitize_name(sanitized_stem)}.desktop"
+
+    # --- Skip integration if already integrated.
+
+    if desktop_file_path.exists():
+        logging.info(f"AppBox {appbox_path.name} already integrated as {desktop_file_path.name}")
         return
 
     extract_appbox(appbox_path, quiet=True)
@@ -101,19 +137,19 @@ def integrate_appbox(appbox_path: Path):
     icon_file = find_icon_file()
     icon_dest = None
 
-    sanitized_stem = sanitize_name(appbox_path.stem)
-
     if icon_file:
-        icon_dest = icons_dir / f"{sanitized_stem}{icon_file.suffix}"
+        icon_dest = icons_dir / f"{sanitize_name(sanitized_stem)}{icon_file.suffix}"
         icons_dir.mkdir(parents=True, exist_ok=True)
         shutil.copy(icon_file, icon_dest)
 
-    new_desktop_path = apps_dir / f"{sanitized_stem}.desktop"
+    new_desktop_path = apps_dir / f"{sanitize_name(sanitized_stem)}.desktop"
     apps_dir.mkdir(parents=True, exist_ok=True)
-    with open(desktop_file, "r") as f:
+
+    with open(desktop_file, "r", encoding="utf-8", errors="ignore") as f:
         content = f.read()
 
     lines = []
+    is_cli_app = False
     for line in content.splitlines():
         if line.startswith("Exec="):
             lines.append(f"Exec={str(appbox_path)}")
@@ -121,31 +157,87 @@ def integrate_appbox(appbox_path: Path):
             lines.append(f"TryExec={str(appbox_path)}")
         elif line.startswith("Icon=") and icon_file:
             lines.append(f"Icon={str(icon_dest)}")
+        elif line.startswith("NoDisplay=true"):
+            is_cli_app = True
         else:
             lines.append(line)
+
     content = "\n".join(lines)
 
     with open(new_desktop_path, "w") as f:
         f.write(content)
 
     logging.info(f"Integrated {appbox_path.name} as {new_desktop_path.name}")
+
+    # --- Handle CLI application (create ZSH alias).
+
+    if is_cli_app:
+        alias_command = f"alias {sanitized_stem}='{str(appbox_path)}'"
+        zsh_alias_file = Path.home() / ".zshrc"
+
+        if zsh_alias_file.exists():
+            with open(zsh_alias_file, "r", encoding="utf-8", errors="ignore") as zshrc:
+                existing_aliases = zshrc.read()
+        else:
+            existing_aliases = ""
+
+        if alias_command not in existing_aliases:
+            with open(zsh_alias_file, "a", encoding="utf-8") as zshrc:
+                zshrc.write(f"\n{alias_command}\n")
+            logging.info(f"Added ZSH alias for CLI application: {sanitized_stem}")
+        else:
+            logging.info(f"ZSH alias for {sanitized_stem} already exists.")
+
     shutil.rmtree(extract_dir / "squashfs-root", ignore_errors=True)
 
+
 def remove_integration(appbox_path: Path):
-    appbox_name = sanitize_name(appbox_path.stem)
+    appbox_name = sanitize_name(get_base_app_name(appbox_path.stem))
+
     for file in apps_dir.glob("*.desktop"):
         try:
             with open(file, "r", encoding="utf-8", errors="ignore") as f:
-                if str(appbox_path) in f.read():
+                content = f.read()
+                if str(appbox_path) in content:
                     file.unlink()
                     logging.info(f"Removed desktop entry {file.name}")
-        except Exception as e:
-            logging.error(f"Failed to read {file}: {e}")
 
-    for file in icons_dir.iterdir():
-        if file.stem == appbox_name:
-            file.unlink()
-            logging.info(f"Removed icon {file.name}")
+                    match = re.search(r'^Icon=(.+)$', content, re.MULTILINE)
+                    if match:
+                        icon_path = Path(match.group(1).strip())
+                        if icon_path.exists():
+                            icon_path.unlink()
+                            logging.info(f"Removed icon {icon_path.name}")
+
+                    # -- Always attempt to remove ZSH alias pointing to this AppBox, regardless of .desktop state.
+
+                    if "NoDisplay=true" in content:
+                        zsh_alias_file = Path.home() / ".zshrc"
+                        alias_prefix = f"alias {appbox_name}="
+                        alias_target = str(appbox_path)
+
+                        if zsh_alias_file.exists():
+                            with open(zsh_alias_file, "r", encoding="utf-8", errors="ignore") as f:
+                                lines = f.readlines()
+
+                            new_lines = []
+                            removed = False
+
+                            for line in lines:
+                                stripped = line.strip()
+                                if stripped.startswith(alias_prefix) and alias_target in stripped:
+                                    removed = True
+                                    continue
+                                new_lines.append(line)
+
+                            if removed:
+                                with open(zsh_alias_file, "w", encoding="utf-8") as f:
+                                    f.writelines(new_lines)
+                                logging.info(f"Removed ZSH alias for CLI app: {appbox_name}")
+
+        except Exception as e:
+            logging.error(f"Failed to process {file}: {e}")
+
 
 class AppBoxHandler(FileSystemEventHandler):
     @staticmethod
@@ -182,22 +274,114 @@ class AppBoxHandler(FileSystemEventHandler):
             return
         remove_integration(Path(event.src_path))
 
+
+def clean_stale_integrations():
+    """Remove stale desktop entries and icons if the corresponding AppBox is missing."""
+
+    existing_appboxes = {str(p) for p in watch_dir.glob("*.AppBox")}
+
+    for desktop_file in apps_dir.glob("*.desktop"):
+        try:
+            with open(desktop_file, "r", encoding="utf-8", errors="ignore") as f:
+                content = f.read()
+
+            exec_lines = [line for line in content.splitlines() if line.startswith("Exec=")]
+
+            for line in exec_lines:
+                exec_cmd = line.replace("Exec=", "").strip().strip('"')
+                exec_path = Path(exec_cmd)
+
+                if exec_path.is_absolute() and str(exec_path).startswith(str(watch_dir)):
+                    if str(exec_path) not in existing_appboxes:
+                        desktop_file.unlink()
+                        logging.info(f"Removed stale desktop entry {desktop_file.name}")
+                        break
+
+        except Exception as e:
+            logging.error(f"Failed to process desktop file {desktop_file}: {e}")
+
+    for icon_file in icons_dir.iterdir():
+        if not icon_file.is_file():
+            continue
+
+        sanitized_name = icon_file.stem
+        related_desktop = apps_dir / f"{sanitized_name}.desktop"
+
+        if not related_desktop.exists():
+            try:
+                icon_file.unlink()
+                logging.info(f"Removed stale icon {icon_file.name}")
+            except Exception as e:
+                logging.error(f"Failed to remove icon {icon_file}: {e}")
+    
+    clean_stale_aliases()
+
+
+def clean_stale_aliases():
+    """Remove stale ZSH aliases that point to missing AppBoxes only."""
+
+    zshrc_path = Path.home() / ".zshrc"
+    if not zshrc_path.exists():
+        return
+
+    existing_appboxes = {str(p) for p in watch_dir.glob("*.AppBox")}
+
+    with open(zshrc_path, "r", encoding="utf-8", errors="ignore") as f:
+        lines = f.readlines()
+
+    new_lines = []
+    modified = False
+
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("alias ") and '=' in stripped:
+            alias_name, alias_value = stripped[6:].split("=", 1)
+            alias_value = alias_value.strip().strip("'\"")
+            alias_path = Path(alias_value)
+
+            # Only process aliases pointing INSIDE the AppBox watch directory
+            if alias_path.is_absolute() and str(alias_path).startswith(str(watch_dir)):
+                if str(alias_path) not in existing_appboxes:
+                    logging.info(f"Removed stale ZSH alias: {alias_name}")
+                    modified = True
+                    continue
+
+        new_lines.append(line)
+
+    if modified:
+        zshrc_path.write_text("".join(new_lines))
+
+
+def scan_existing_appboxes():
+    """Scan existing AppBoxes and integrate missing ones."""
+    for appbox in watch_dir.glob("*.AppBox"):
+        base_name = get_base_app_name(appbox.stem)
+        expected_desktop = apps_dir / f"{base_name}.desktop"
+        if not expected_desktop.exists():
+            logging.info(f"Found unintegrated AppBox: {appbox.name}, integrating...")
+            integrate_appbox(appbox)
+
+
 def main():
     logging.info("Starting nx-apphubd")
-    observer = Observer()
-    observer.schedule(AppBoxHandler(), path=str(watch_dir), recursive=False)
-    observer.start()
 
-    for appbox in watch_dir.glob("*.AppBox"):
-        integrate_appbox(appbox)
+    clean_stale_integrations()
+    scan_existing_appboxes()
+
+    observer = Observer()
+    handler = AppBoxHandler()
+    observer.schedule(handler, str(watch_dir), recursive=False)
+    observer.start()
 
     try:
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
         observer.stop()
+
     observer.join()
     logging.info("Stopping nx-apphubd")
+
 
 if __name__ == "__main__":
     main()
