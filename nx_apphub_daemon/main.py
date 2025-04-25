@@ -209,9 +209,9 @@ def remove_integration(appbox_path: Path):
                             icon_path.unlink()
                             logging.info(f"Removed icon {icon_path.name}")
 
-                    # -- Always attempt to remove ZSH alias pointing to this AppBox, regardless of .desktop state.
+                    # -- Always attempt to remove ZSH alias pointing to non-existent AppBox, regardless of .desktop state.
 
-                    if "NoDisplay=true" in content:
+                    if not appbox_path.exists():
                         zsh_alias_file = Path.home() / ".zshrc"
                         alias_prefix = f"alias {appbox_name}="
                         alias_target = str(appbox_path)
