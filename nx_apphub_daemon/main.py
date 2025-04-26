@@ -150,6 +150,7 @@ def integrate_appbox(appbox_path: Path):
 
     lines = []
     is_cli_app = False
+
     for line in content.splitlines():
         if line.startswith("Exec="):
             lines.append(f"Exec={str(appbox_path)}")
@@ -159,12 +160,13 @@ def integrate_appbox(appbox_path: Path):
             lines.append(f"Icon={str(icon_dest)}")
         elif line.startswith("NoDisplay=true"):
             is_cli_app = True
+            lines.append("NoDisplay=true")
         else:
             lines.append(line)
 
     content = "\n".join(lines)
 
-    with open(new_desktop_path, "w") as f:
+    with open(new_desktop_path, "w", encoding="utf-8") as f:
         f.write(content)
 
     logging.info(f"Integrated {appbox_path.name} as {new_desktop_path.name}")
@@ -177,16 +179,22 @@ def integrate_appbox(appbox_path: Path):
 
         if zsh_alias_file.exists():
             with open(zsh_alias_file, "r", encoding="utf-8", errors="ignore") as zshrc:
-                existing_aliases = zshrc.read()
+                lines = [line.rstrip() for line in zshrc.readlines()]
         else:
-            existing_aliases = ""
+            lines = []
 
-        if alias_command not in existing_aliases:
-            with open(zsh_alias_file, "a", encoding="utf-8") as zshrc:
-                zshrc.write(f"\n{alias_command}\n")
-            logging.info(f"Added ZSH alias for CLI application: {sanitized_stem}")
-        else:
+        existing_alias_block = f"# Alias for {sanitized_stem}\n{alias_command}"
+
+        # -- Check if the alias already exists.
+
+        if any(alias_command in line for line in lines):
             logging.info(f"ZSH alias for {sanitized_stem} already exists.")
+        else:
+            with open(zsh_alias_file, "a", encoding="utf-8") as zshrc:
+                if lines and lines[-1] != "":
+                    zshrc.write("\n")
+                zshrc.write(f"# Alias for {sanitized_stem}\n{alias_command}\n")
+            logging.info(f"Added ZSH alias for CLI application: {sanitized_stem}")
 
     shutil.rmtree(extract_dir / "squashfs-root", ignore_errors=True)
 
@@ -205,38 +213,44 @@ def remove_integration(appbox_path: Path):
                     match = re.search(r'^Icon=(.+)$', content, re.MULTILINE)
                     if match:
                         icon_path = Path(match.group(1).strip())
-                        if icon_path.exists():
+                        if icon_path.exists() and icon_path.is_file():
                             icon_path.unlink()
                             logging.info(f"Removed icon {icon_path.name}")
 
-                    # -- Always attempt to remove ZSH alias pointing to non-existent AppBox, regardless of .desktop state.
-
-                    if not appbox_path.exists():
-                        zsh_alias_file = Path.home() / ".zshrc"
-                        alias_prefix = f"alias {appbox_name}="
-                        alias_target = str(appbox_path)
-
-                        if zsh_alias_file.exists():
-                            with open(zsh_alias_file, "r", encoding="utf-8", errors="ignore") as f:
-                                lines = f.readlines()
-
-                            new_lines = []
-                            removed = False
-
-                            for line in lines:
-                                stripped = line.strip()
-                                if stripped.startswith(alias_prefix) and alias_target in stripped:
-                                    removed = True
-                                    continue
-                                new_lines.append(line)
-
-                            if removed:
-                                with open(zsh_alias_file, "w", encoding="utf-8") as f:
-                                    f.writelines(new_lines)
-                                logging.info(f"Removed ZSH alias for CLI app: {appbox_name}")
-
         except Exception as e:
             logging.error(f"Failed to process {file}: {e}")
+
+    # --- Always attempt to remove ZSH alias and its comment block.
+
+    zsh_alias_file = Path.home() / ".zshrc"
+    if zsh_alias_file.exists():
+        try:
+            with open(zsh_alias_file, "r", encoding="utf-8", errors="ignore") as f:
+                lines = f.readlines()
+
+            new_lines = []
+            skip_next = False
+            removed = False
+
+            for line in lines:
+                if skip_next:
+                    skip_next = False
+                    continue
+
+                if line.strip() == f"# Alias for {appbox_name}":
+                    skip_next = True
+                    removed = True
+                    continue
+
+                new_lines.append(line)
+
+            if removed:
+                with open(zsh_alias_file, "w", encoding="utf-8") as f:
+                    f.writelines(new_lines)
+                logging.info(f"Removed ZSH alias for CLI app: {appbox_name}")
+
+        except Exception as e:
+            logging.error(f"Failed to clean ZSH alias: {e}")
 
 
 class AppBoxHandler(FileSystemEventHandler):
