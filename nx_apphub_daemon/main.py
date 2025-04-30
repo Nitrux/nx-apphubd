@@ -106,8 +106,30 @@ def find_icon_file():
     return None
 
 
+def wait_until_file_ready(path: Path, timeout=10, interval=0.2) -> bool:
+    """Wait until the file is no longer changing (and not locked)."""
+    start_time = time.time()
+    last_size = -1
+
+    while time.time() - start_time < timeout:
+        try:
+            current_size = path.stat().st_size
+            if current_size == last_size and os.access(path, os.X_OK):
+                return True
+            last_size = current_size
+        except (FileNotFoundError, PermissionError):
+            pass
+        time.sleep(interval)
+
+    return False
+
+
 def integrate_appbox(appbox_path: Path):
     extract_dir.mkdir(parents=True, exist_ok=True)
+
+    if not wait_until_file_ready(appbox_path):
+        logging.warning(f"AppBox not ready after timeout: {appbox_path}")
+        return
 
     if not os.access(appbox_path, os.X_OK):
         logging.warning(f"{appbox_path.name} is not executable; setting mode 755")
