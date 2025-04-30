@@ -324,31 +324,14 @@ def remove_integration(appbox_path: Path):
 
 
 class AppBoxHandler(FileSystemEventHandler):
-    @staticmethod
-    def wait_for_file_complete(path: Path, timeout=10, interval=0.2):
-        """Wait until the file size stops changing."""
-        start_time = time.time()
-        last_size = -1
-
-        while time.time() - start_time < timeout:
-            try:
-                current_size = path.stat().st_size
-                if current_size == last_size:
-                    return True
-                last_size = current_size
-            except FileNotFoundError:
-                pass
-            time.sleep(interval)
-        return False
-
     def on_created(self, event):
         if event.is_directory or not event.src_path.endswith(".AppBox"):
             return
 
         appbox_path = Path(event.src_path)
 
-        if not self.wait_for_file_complete(appbox_path):
-            logging.warning(f"File not ready after timeout: {appbox_path}")
+        if not wait_until_file_ready(appbox_path):
+            logging.warning(f"AppBox not ready after timeout: {appbox_path}")
             return
 
         integrate_appbox(appbox_path)
