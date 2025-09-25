@@ -406,7 +406,8 @@ def clean_stale_aliases():
             alias_value = alias_value.strip().strip("'\"")
             alias_path = Path(alias_value)
 
-            # Only process aliases pointing INSIDE the AppBox watch directory
+            # -- Only process aliases pointing INSIDE the AppBox watch directory.
+
             if alias_path.is_absolute() and str(alias_path).startswith(str(watch_dir)):
                 if str(alias_path) not in existing_appboxes:
                     logging.info(f"Removed stale ZSH alias: {alias_name}")
