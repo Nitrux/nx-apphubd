@@ -115,7 +115,7 @@ def find_icon_file():
     return None
 
 
-def wait_until_file_ready(path: Path, timeout=10, interval=0.2) -> bool:
+def wait_until_file_ready(path: Path, timeout=90, interval=0.2) -> bool:
     """Wait until the file is no longer changing (and not locked)."""
     start_time = time.time()
     last_size = -1
