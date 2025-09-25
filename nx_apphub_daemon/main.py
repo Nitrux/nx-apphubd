@@ -432,6 +432,9 @@ def scan_existing_appboxes():
 def main():
     logging.info("Starting nx-apphubd")
 
+    for path in [watch_dir, extract_dir, apps_dir, icons_dir]:
+        path.mkdir(parents=True, exist_ok=True)
+
     clean_stale_integrations()
     scan_existing_appboxes()
 
