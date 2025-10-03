@@ -26,7 +26,7 @@ appstream
 binutils
 file
 fuse3
-libfuse2t64
+libfuse2t64 || libfuse2 
 ```
 
 # Installation
