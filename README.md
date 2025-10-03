@@ -42,7 +42,7 @@ pipx install git+https://github.com/Nitrux/nx-apphubd.git
 ## System-wide
 
 ```
-pipx install --system-site-packages git+https://github.com/Nitrux/nx-apphubd.git
+pipx install --global git+https://github.com/Nitrux/nx-apphubd.git
 ```
 
 # Uninstallation
