@@ -15,7 +15,7 @@ For more in-depth information about NX AppHub CLI, please see the [Wiki](https:/
 
 ## Requirements
 
-- Nitrux 4.0.0 and newer.
+- Nitrux 5.0.0 and newer.
     - _♦ Information: To use `nx-apphubd` in previous versions of Nitrux use a container; see our tutorial on [how to use Distrobox](https://nxos.org/tutorial/how-to-use-distrobox-in-nitrux/)._
 - Python 3.10 and newer.
 
@@ -39,23 +39,40 @@ To install NX AppHub Daemon we recommend using pipx.
 pipx install git+https://github.com/Nitrux/nx-apphubd.git
 ```
 
+> _⚠️ Important: pipx will install `nx-apphubd` to `$HOME/.local/bin`, run `pipx ensurepath` to add this directory to `$PATH`._
+
+
 ## System-wide
 
 ```
-pipx install --global git+https://github.com/Nitrux/nx-apphubd.git
+sudo pipx install --global git+https://github.com/Nitrux/nx-apphubd.git
 ```
 
 # Uninstallation
 
 To uninstall NX AppHub Daemon, do the following.
 
+## Single-user
+
 ```
 pipx uninstall nx-apphubd
+```
+
+## System-wide
+
+```
+sudo pipx uninstall --global nx-apphubd
 ```
 
 # Usage
 
 To use NX AppHub Daemon, simply run it.
+
+## Examples
+
+```
+nx-apphubd
+```
 
 
 # Licensing
