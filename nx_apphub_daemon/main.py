@@ -466,9 +466,15 @@ def main():
     for path in [watch_dir, extract_dir, apps_dir, icons_dir, config_dir]:
         path.mkdir(parents=True, exist_ok=True)
 
+    if not alias_file.exists():
+        alias_file.touch()
+
     clean_stale_integrations()
     scan_existing_appboxes()
     ensure_zsh_source()
+
+    if alias_file.exists():
+        logging.info(f"IMPORTANT: Please source {alias_file} in your .zshrc to enable CLI aliases.")
 
     observer = Observer()
     handler = AppBoxHandler()
