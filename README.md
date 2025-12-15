@@ -9,7 +9,7 @@
 NX AppHub Daemon is a daemon that integrates AppBoxes generated with NX Apphub CLI with the desktop.
 
 > [!WARNING]
-> NX AppHub CLI primarily targets Nitrux OS, and using this utility in other distributions may or may not work. Compatibility with other distributions is incidental, not intentional._
+> NX AppHub CLI primarily targets Nitrux OS, and using this utility in other distributions may or may not work. Compatibility with other distributions is incidental, not intentional.
 
 
 For more in-depth information about NX AppHub CLI, please see the [Wiki](https://github.com/Nitrux/nx-apphub/wiki).
@@ -18,7 +18,7 @@ For more in-depth information about NX AppHub CLI, please see the [Wiki](https:/
 
 - Nitrux 5.0.0 and newer.
 > [!NOTE]
-> To use `nx-apphubd` in previous versions of Nitrux use a container; see our tutorial on [how to use Distrobox](https://nxos.org/tutorial/how-to-use-distrobox-in-nitrux/)._
+> To use `nx-apphubd` in previous versions of Nitrux use a container; see our tutorial on [how to use Distrobox](https://nxos.org/tutorial/how-to-use-distrobox-in-nitrux/).
 - Python 3.10 and newer.
 
 ### Runtime Requirements
@@ -42,7 +42,7 @@ pipx install git+https://github.com/Nitrux/nx-apphubd.git
 ```
 
 > [!WARNING]
-> pipx will install `nx-apphubd` to `$HOME/.local/bin`, run `pipx ensurepath` to add this directory to `$PATH`._
+> pipx will install `nx-apphubd` to `$HOME/.local/bin`, run `pipx ensurepath` to add this directory to `$PATH`.
 
 
 ## System-wide
