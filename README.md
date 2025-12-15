@@ -8,7 +8,8 @@
 
 NX AppHub Daemon is a daemon that integrates AppBoxes generated with NX Apphub CLI with the desktop.
 
-> _⚠️ Important: NX AppHub CLI primarily targets Nitrux OS, and using this utility in other distributions may or may not work. Compatibility with other distributions is incidental, not intentional._
+> [!WARNING]
+> NX AppHub CLI primarily targets Nitrux OS, and using this utility in other distributions may or may not work. Compatibility with other distributions is incidental, not intentional._
 
 
 For more in-depth information about NX AppHub CLI, please see the [Wiki](https://github.com/Nitrux/nx-apphub/wiki).
@@ -39,7 +40,8 @@ To install NX AppHub Daemon we recommend using pipx.
 pipx install git+https://github.com/Nitrux/nx-apphubd.git
 ```
 
-> _⚠️ Important: pipx will install `nx-apphubd` to `$HOME/.local/bin`, run `pipx ensurepath` to add this directory to `$PATH`._
+> [!WARNING]
+> pipx will install `nx-apphubd` to `$HOME/.local/bin`, run `pipx ensurepath` to add this directory to `$PATH`._
 
 
 ## System-wide
