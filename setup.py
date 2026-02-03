@@ -11,6 +11,7 @@ setup(
     packages=find_packages(),
     install_requires=[
         "watchdog",
+        "pyyaml",
     ],
     entry_points={
         'console_scripts': [

@@ -11,6 +11,7 @@ import re
 import configparser
 import threading
 import errno
+import yaml
 from pathlib import Path
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
@@ -93,6 +94,124 @@ def is_elf_binary(path: Path) -> bool:
     except Exception as e:
         logging.error(f"Failed to check file signature for {path}: {e}")
         return False
+
+
+def is_valid_appbox(path: Path) -> tuple[bool, str]:
+    """
+    Validate that a file is a genuine AppBox and not a renamed AppImage.
+
+    By design, nx-apphubd is intended to integrate AppBoxes, not AppImages.
+    This function validates that the AppBox file has a corresponding YAML
+    definition and build marker in the nx-apphub-cli directory structure,
+    which proves it was built through the proper nx-apphub-cli workflow.
+
+    AppBoxes are built from YAMLs in:
+    ~/.local/share/nx-apphub-cli/<repo>/apps/<arch>/<appname>/app.yml
+
+    Build markers are created at:
+    ~/.local/share/nx-apphub-cli/.built/{name}-{version}-{arch}
+
+    The YAML file contains buildinfo with name, version, and arch that must
+    match the AppBox filename format: {name}-{version}-{arch}.AppBox
+
+    Args:
+        path: Path to the file to validate.
+
+    Returns:
+        A tuple of (is_valid, reason) where is_valid is True if the file
+        passes validation, and reason provides details if validation fails.
+        Returns False for AppImages or files without YAML definitions or build markers.
+    """
+    if not path.exists():
+        return False, "File does not exist"
+
+    if not is_elf_binary(path):
+        return False, "Not a valid ELF binary"
+
+    nx_apphub_cli_dir = xdg_data_home / "nx-apphub-cli"
+
+    if not nx_apphub_cli_dir.exists():
+        logging.warning(
+            f"nx-apphub-cli directory not found at {nx_apphub_cli_dir}. "
+            f"Cannot validate {path.name} as a genuine AppBox."
+        )
+        return False, "No nx-apphub-cli directory found - AppBox definitions missing"
+
+    filename_stem = path.stem
+
+    arch_mapping = {
+        'x86_64': 'amd64',
+        'aarch64': 'arm64'
+    }
+
+    found_yaml = False
+
+    try:
+        for yaml_file in nx_apphub_cli_dir.rglob("app.yml"):
+            if not yaml_file.is_file():
+                continue
+
+            try:
+                with open(yaml_file, 'r', encoding='utf-8') as f:
+                    yaml_data = yaml.safe_load(f)
+
+                if not yaml_data or 'buildinfo' not in yaml_data:
+                    continue
+
+                buildinfo = yaml_data['buildinfo']
+                yaml_name = buildinfo.get('name', '')
+                yaml_version = buildinfo.get('version', '')
+
+                yaml_arch = None
+                if 'distrorepo' in buildinfo and buildinfo['distrorepo']:
+                    yaml_arch = buildinfo['distrorepo'][0].get('arch', '')
+
+                reverse_arch_mapping = {v: k for k, v in arch_mapping.items()}
+                expected_arch = reverse_arch_mapping.get(yaml_arch, yaml_arch)
+
+                expected_filename_stem = f"{yaml_name}-{yaml_version}-{expected_arch}"
+
+                if filename_stem == expected_filename_stem:
+                    found_yaml = True
+                    logging.info(
+                        f"Found matching YAML definition for {path.name}: {yaml_file}"
+                    )
+                    break
+
+            except yaml.YAMLError as e:
+                logging.debug(f"Failed to parse YAML {yaml_file}: {e}")
+                continue
+            except Exception as e:
+                logging.debug(f"Error checking YAML {yaml_file}: {e}")
+                continue
+
+    except Exception as e:
+        logging.error(f"Error searching for YAML definition for {path.name}: {e}")
+        return False, f"Error validating AppBox: {e}"
+
+    if not found_yaml:
+        logging.error(
+            f"No YAML definition found for {path.name}. "
+            "This file may be a renamed AppImage or was not built through nx-apphub-cli. "
+            "nx-apphubd is designed to integrate AppBoxes built from YAML definitions. "
+            "Integration refused."
+        )
+        return False, "No corresponding YAML definition found - not a valid AppBox"
+
+    # Check for build marker - proves the AppBox was built by nx-apphub-cli
+    build_markers_dir = nx_apphub_cli_dir / ".built"
+    build_marker_file = build_markers_dir / filename_stem
+
+    if not build_marker_file.exists():
+        logging.error(
+            f"Build marker not found for {path.name}. "
+            "This AppBox was not built through nx-apphub-cli. "
+            "Expected marker at: {build_marker_file}. "
+            "Integration refused."
+        )
+        return False, "No build marker found - AppBox not built by nx-apphub-cli"
+
+    return True, "Valid AppBox"
 
 
 def send_notification(summary: str, body: str, icon: Path = None):
@@ -224,8 +343,16 @@ def integrate_appbox(appbox_path: Path):
         logging.warning(f"AppBox not ready after timeout: {appbox_path}")
         return
 
-    if not is_elf_binary(appbox_path):
-        logging.error(f"Security Warning: {appbox_path.name} is not a valid ELF binary. Skipping execution.")
+    is_valid, validation_reason = is_valid_appbox(appbox_path)
+    if not is_valid:
+        logging.error(
+            f"AppBox validation failed for {appbox_path.name}: {validation_reason}. "
+            "Skipping integration."
+        )
+        send_notification(
+            "Integration Failed",
+            f"{appbox_path.name} could not be integrated. {validation_reason}."
+        )
         return
 
     if not os.access(appbox_path, os.X_OK):
@@ -382,9 +509,8 @@ def remove_integration(appbox_path: Path):
         except Exception as e:
             logging.error(f"Failed to process removal for {file}: {e}")
 
-    update_alias_file(appbox_name, appbox_path, remove=True)
-
     if removed_anything:
+        update_alias_file(appbox_name, appbox_path, remove=True)
         send_notification(
             "Application Removed",
             f"Integration for {appbox_name.title()} has been removed from the system."
