@@ -144,7 +144,14 @@ def is_valid_appbox(path: Path) -> tuple[bool, str]:
         'aarch64': 'arm64'
     }
 
+    parts = filename_stem.split('-')
+    if len(parts) < 3:
+        return False, "Invalid AppBox filename format"
+
+    file_arch = parts[-1]
+
     found_yaml = False
+    found_yaml_path = None
 
     try:
         for yaml_file in nx_apphub_cli_dir.rglob("app.yml"):
@@ -160,7 +167,9 @@ def is_valid_appbox(path: Path) -> tuple[bool, str]:
 
                 buildinfo = yaml_data['buildinfo']
                 yaml_name = buildinfo.get('name', '')
-                yaml_version = buildinfo.get('version', '')
+
+                if not yaml_name:
+                    continue
 
                 yaml_arch = None
                 if 'distrorepo' in buildinfo and buildinfo['distrorepo']:
@@ -169,10 +178,11 @@ def is_valid_appbox(path: Path) -> tuple[bool, str]:
                 reverse_arch_mapping = {v: k for k, v in arch_mapping.items()}
                 expected_arch = reverse_arch_mapping.get(yaml_arch, yaml_arch)
 
-                expected_filename_stem = f"{yaml_name}-{yaml_version}-{expected_arch}"
-
-                if filename_stem == expected_filename_stem:
+                # Check if the filename starts with the app name and has matching arch
+                # This allows different versions to be validated against the same YAML
+                if filename_stem.startswith(f"{yaml_name}-") and file_arch == expected_arch:
                     found_yaml = True
+                    found_yaml_path = yaml_file
                     logging.info(
                         f"Found matching YAML definition for {path.name}: {yaml_file}"
                     )
@@ -206,7 +216,7 @@ def is_valid_appbox(path: Path) -> tuple[bool, str]:
         logging.error(
             f"Build marker not found for {path.name}. "
             "This AppBox was not built through nx-apphub-cli. "
-            "Expected marker at: {build_marker_file}. "
+            f"Expected marker at: {build_marker_file}. "
             "Integration refused."
         )
         return False, "No build marker found - AppBox not built by nx-apphub-cli"
