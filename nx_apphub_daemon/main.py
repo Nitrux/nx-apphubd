@@ -45,12 +45,27 @@ logging.basicConfig(
 
 
 def sanitize_name(name: str) -> str:
+    """
+    Sanitize application name by replacing problematic characters with hyphens.
+
+    Args:
+        name: The application name to sanitize.
+
+    Returns:
+        The sanitized name with ':+~' characters replaced by '-'.
+    """
     return re.sub(r'[:+~]', '-', name)
 
 
 def get_base_app_name(filename_stem: str) -> str:
     """
     Extract the base application name from an AppBox filename.
+
+    Args:
+        filename_stem: The filename without extension.
+
+    Returns:
+        The base application name extracted from the filename.
     """
     filename_stem = re.sub(r'-[^-]+$', '', filename_stem)
     base_name = filename_stem.split('-')[0]
@@ -63,7 +78,15 @@ def get_base_app_name(filename_stem: str) -> str:
 
 
 def is_elf_binary(path: Path) -> bool:
-    """Check for ELF magic bytes to ensure file is executable binary."""
+    """
+    Check for ELF magic bytes to ensure file is executable binary.
+
+    Args:
+        path: Path to the file to check.
+
+    Returns:
+        True if the file is a valid ELF binary, False otherwise.
+    """
     try:
         with open(path, "rb") as f:
             return f.read(4) == b'\x7fELF'
@@ -75,6 +98,11 @@ def is_elf_binary(path: Path) -> bool:
 def send_notification(summary: str, body: str, icon: Path = None):
     """
     Send a desktop notification using notify-send.
+
+    Args:
+        summary: Notification title.
+        body: Notification message body.
+        icon: Optional path to icon file for the notification.
     """
     if not shutil.which("notify-send"):
         return
@@ -108,6 +136,11 @@ def send_notification(summary: str, body: str, icon: Path = None):
 def update_alias_file(alias_name: str, appbox_path: Path, remove=False):
     """
     Update the dedicated aliases.zsh file in a thread-safe manner.
+
+    Args:
+        alias_name: The alias name to add or remove.
+        appbox_path: Path to the AppBox executable.
+        remove: If True, remove the alias; otherwise add it.
     """
     with file_lock:
         config_dir.mkdir(parents=True, exist_ok=True)
@@ -148,7 +181,17 @@ def update_alias_file(alias_name: str, appbox_path: Path, remove=False):
 
 
 def wait_until_file_ready(path: Path, timeout=90, interval=0.2) -> bool:
-    """Wait until the file is no longer changing (and not locked)."""
+    """
+    Wait until the file is no longer changing (and not locked).
+
+    Args:
+        path: Path to the file to monitor.
+        timeout: Maximum time to wait in seconds (default: 90).
+        interval: Time between checks in seconds (default: 0.2).
+
+    Returns:
+        True if file is ready and accessible, False if timeout occurs.
+    """
     start_time = time.time()
     last_size = -1
 
@@ -167,7 +210,13 @@ def wait_until_file_ready(path: Path, timeout=90, interval=0.2) -> bool:
 
 def integrate_appbox(appbox_path: Path):
     """
-    Main integration logic. Designed to run in a separate thread.
+    Main integration logic for AppBox files. Designed to run in a separate thread.
+
+    Extracts the AppBox, parses the desktop file, installs icons, and creates
+    desktop integration. Handles CLI applications by creating shell aliases.
+
+    Args:
+        appbox_path: Path to the AppBox file to integrate.
     """
     extract_dir.mkdir(parents=True, exist_ok=True)
 
@@ -299,6 +348,14 @@ def integrate_appbox(appbox_path: Path):
 
 
 def remove_integration(appbox_path: Path):
+    """
+    Remove all desktop integration for a specific AppBox.
+
+    Removes desktop files, icons, and shell aliases associated with the AppBox.
+
+    Args:
+        appbox_path: Path to the AppBox file being removed.
+    """
     appbox_name = sanitize_name(get_base_app_name(appbox_path.stem))
     removed_anything = False
 
@@ -363,7 +420,12 @@ class AppBoxHandler(FileSystemEventHandler):
 
 
 def clean_stale_integrations():
-    """Remove stale desktop entries, icons, and aliases if the AppBox is missing."""
+    """
+    Remove stale desktop entries, icons, and aliases if the AppBox is missing.
+
+    Scans all desktop entries and aliases, removing those that reference
+    non-existent AppBox files in the watched directory.
+    """
     existing_appboxes = {str(p) for p in watch_dir.glob("*.AppBox")}
 
     for desktop_file in apps_dir.glob("*.desktop"):
@@ -416,7 +478,12 @@ def clean_stale_integrations():
 
 
 def scan_existing_appboxes():
-    """Scan existing AppBoxes and integrate missing ones."""
+    """
+    Scan existing AppBoxes and integrate missing ones.
+
+    Called at daemon startup to ensure all AppBox files in the watched
+    directory are properly integrated with the desktop environment.
+    """
     for appbox in watch_dir.glob("*.AppBox"):
         base_name = sanitize_name(get_base_app_name(appbox.stem))
         expected_desktop = apps_dir / f"{base_name}.desktop"
@@ -431,7 +498,12 @@ def scan_existing_appboxes():
 
 
 def ensure_zsh_source():
-    """Ensure the alias file is sourced in .zshrc."""
+    """
+    Ensure the alias file is sourced in .zshrc.
+
+    Adds a source line to the user's .zshrc file to load AppBox shell aliases.
+    Creates .zshrc if it doesn't exist.
+    """
     zshrc = home / ".zshrc"
 
     try:
@@ -461,6 +533,12 @@ def ensure_zsh_source():
 
 
 def main():
+    """
+    Main entry point for the nx-apphubd daemon.
+
+    Initializes directories, cleans stale integrations, scans existing AppBoxes,
+    sets up file system monitoring, and runs the daemon event loop.
+    """
     logging.info("Starting nx-apphubd")
 
     for path in [watch_dir, extract_dir, apps_dir, icons_dir, config_dir]:
