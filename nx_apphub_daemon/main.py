@@ -33,6 +33,11 @@ alias_file = config_dir / "aliases.zsh"
 
 file_lock = threading.Lock()
 
+# Allow a short grace period for build-marker creation when AppBox and marker
+# are written almost simultaneously by nx-apphub-cli.
+BUILD_MARKER_WAIT_TIMEOUT = 12.0
+BUILD_MARKER_POLL_INTERVAL = 0.4
+
 
 # -- Use a log file.
 
@@ -211,6 +216,16 @@ def is_valid_appbox(path: Path) -> tuple[bool, str]:
     # Check for build marker - proves the AppBox was built by nx-apphub-cli
     build_markers_dir = nx_apphub_cli_dir / ".built"
     build_marker_file = build_markers_dir / filename_stem
+
+    if not build_marker_file.exists():
+        deadline = time.monotonic() + BUILD_MARKER_WAIT_TIMEOUT
+        while time.monotonic() < deadline:
+            if build_marker_file.exists():
+                logging.info(
+                    f"Build marker appeared for {path.name} after brief wait: {build_marker_file}"
+                )
+                break
+            time.sleep(BUILD_MARKER_POLL_INTERVAL)
 
     if not build_marker_file.exists():
         logging.error(
@@ -480,6 +495,17 @@ def integrate_appbox(appbox_path: Path):
 
     if is_cli_app:
         update_alias_file(sanitized_name, appbox_path, remove=False)
+        send_notification(
+            "Shell Restart Required",
+            (
+                f"Alias '{sanitized_name}' was added. Restart your shell to use it, "
+                f"or run: source {alias_file}"
+            ),
+            icon=icon_dest
+        )
+        logging.info(
+            f"CLI alias '{sanitized_name}' added. Shell restart or 'source {alias_file}' is required."
+        )
 
     shutil.rmtree(specific_extract_dir, ignore_errors=True)
 
@@ -495,6 +521,7 @@ def remove_integration(appbox_path: Path):
     """
     appbox_name = sanitize_name(get_base_app_name(appbox_path.stem))
     removed_anything = False
+    removed_cli_alias = False
 
     for file in apps_dir.glob("*.desktop"):
         try:
@@ -506,9 +533,11 @@ def remove_integration(appbox_path: Path):
                 if 'Desktop Entry' in parser:
                     exec_path = parser['Desktop Entry'].get('Exec', '')
                     if str(appbox_path) in exec_path:
+                        is_cli_app = parser['Desktop Entry'].get('NoDisplay', 'false').lower() == 'true'
                         file.unlink()
                         logging.info(f"Removed desktop entry {file.name}")
                         removed_anything = True
+                        removed_cli_alias = removed_cli_alias or is_cli_app
 
                         icon_path_str = parser['Desktop Entry'].get('Icon', '')
                         if icon_path_str:
@@ -524,7 +553,18 @@ def remove_integration(appbox_path: Path):
         send_notification(
             "Application Removed",
             f"Integration for {appbox_name.title()} has been removed from the system."
-    )
+        )
+        if removed_cli_alias:
+            send_notification(
+                "Shell Restart Required",
+                (
+                    f"Alias '{appbox_name}' was removed. Restart your shell to apply changes, "
+                    f"or run: source {alias_file}"
+                )
+            )
+            logging.info(
+                f"CLI alias '{appbox_name}' removed. Shell restart or 'source {alias_file}' is required."
+            )
 
 
 class AppBoxHandler(FileSystemEventHandler):
