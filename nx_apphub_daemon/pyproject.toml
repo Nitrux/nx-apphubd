@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nx-apphubd"
-version = "1.1.1"
+version = "1.2.1"
 description = "AppBox desktop integration daemon for nx-apphub"
 authors = [{name = "Your Name"}]
 requires-python = ">=3.7"
